@@ -1,11 +1,11 @@
 name: probe
 # Настоящий Safari (macOS) и Safari в симуляторе iOS на машинах GitHub.
-# Запуск: gh workflow run probe.yml -f paths=/,/cart -f targets="mac:1440x900,ios:iPhone 16"
+# Запуск: gh workflow run probe.yml -f paths=/,/cart -f targets="mac:1440x900,ios:iPhone 16 Pro"
 on:
   workflow_dispatch:
     inputs:
       paths: { description: 'страницы через запятую', default: '/' }
-      targets: { description: 'mac:ШxВ, ios:<симулятор>, ipad:<симулятор>', default: 'mac:1440x900,mac:1152x700,ios:iPhone 16,ios:iPhone SE (3rd generation),ios:iPhone 16 Pro Max,ipad:iPad Air 11-inch (M2)' }
+      targets: { description: 'mac:ШxВ, ios:<симулятор>, ipad:<симулятор>', default: 'mac:1440x900,ios:iPhone 16 Pro,ios:iPhone SE (3rd generation)' }
       login: { description: 'войти тестовым покупателем', default: 'true' }
 permissions: { contents: read }
 jobs:
@@ -17,22 +17,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm install --no-audit --no-fund
-      - name: Safari — разрешить WebDriver, загрузить симуляторы
-        env:
-          TARGETS: ${{ inputs.targets }}
+      - name: Safari — разрешить WebDriver
         run: |
           sudo safaridriver --enable
-          safaridriver --enable || true
-          # Safari открыть и закрыть один раз — иначе первая сессия WebDriver падает «internal error».
-          open -a Safari || true; sleep 8; pkill -x Safari || true
           defaults write com.apple.Safari AllowRemoteAutomation -bool true || true
           defaults write com.apple.Safari IncludeDevelopMenu -bool true || true
           sw_vers; /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" /Applications/Safari.app/Contents/Info.plist
           # Симуляторы грузит probe.mjs по одному, перед своей целью.
-            perl -e 'alarm shift; exec @ARGV' 60 xcrun simctl launch "$UDID" com.apple.mobilesafari || true
-            sleep 5
-            xcrun simctl terminate "$UDID" com.apple.mobilesafari || true
-          done
       - name: Прогон
         env:
           BASE: ${{ secrets.BASE }}
@@ -45,6 +36,7 @@ jobs:
         if: always()
         env: { ART_KEY: '${{ secrets.ART_KEY }}' }
         run: |
+          mkdir -p out
           tar czf out.tgz out
           openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in out.tgz -out out.tgz.enc -pass env:ART_KEY
           rm -rf out out.tgz
