@@ -29,6 +29,10 @@ async function open(target) {
     for (const k of ['RemoteAutomationEnabled', 'WebDriverEnabled', 'WebKitRemoteAutomationEnabled', 'AllowRemoteAutomation']) {
       try { execFileSync('xcrun', ['simctl', 'spawn', dev.udid, 'defaults', 'write', 'com.apple.mobilesafari', k, '-bool', 'YES']); } catch {}
     }
+    // Первый запуск Safari в свежем симуляторе долгий — без прогрева safaridriver не дожидается его.
+    try { execFileSync('xcrun', ['simctl', 'launch', dev.udid, 'com.apple.mobilesafari'], { timeout: 90000 }); } catch {}
+    await sleep(10000);
+    try { execFileSync('xcrun', ['simctl', 'terminate', dev.udid, 'com.apple.mobilesafari'], { timeout: 30000 }); } catch {}
     caps = { browserName: 'safari', platformName: 'iOS', 'safari:useSimulator': true, 'safari:deviceUDID': dev.udid, 'safari:deviceType': kind === 'ipad' ? 'iPad' : 'iPhone' };
   }
   console.log('сессия', target);
