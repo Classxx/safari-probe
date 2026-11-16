@@ -1,0 +1,8 @@
+{
+  "name": "safari-probe",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "selenium-webdriver": "^4.27.0"
+  }
+}
