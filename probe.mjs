@@ -2,6 +2,7 @@
 // Секреты (адрес стенда, кука доступа) только из окружения; в лог не пишем.
 import { Builder } from 'selenium-webdriver';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 const { BASE, GATE, PATHS = '/', TARGETS = 'mac:1440x900', LOGIN = 'true' } = process.env;
 const DETECT = fs.readFileSync(new URL('./detect.js', import.meta.url), 'utf8');
 fs.mkdirSync('out', { recursive: true });
@@ -14,8 +15,22 @@ const clean = (s) => { let x = String(s); for (const v of [GATE, BASE, BASE && n
 
 async function open(target) {
   const [kind, spec] = [target.slice(0, target.indexOf(':')), target.slice(target.indexOf(':') + 1)];
-  const caps = kind === 'mac' ? { browserName: 'safari' }
-    : { browserName: 'safari', platformName: 'iOS', 'safari:useSimulator': true, 'safari:deviceName': spec, 'safari:deviceType': kind === 'ipad' ? 'iPad' : 'iPhone' };
+  let caps = { browserName: 'safari' };
+  if (kind !== 'mac') {
+    // Симулятор грузим здесь, по одному: safaridriver берёт любой загруженный, и при
+    // двух сразу «iPhone SE» снимался как 16 Pro. Остальные гасим.
+    const list = JSON.parse(execFileSync('xcrun', ['simctl', 'list', 'devices', 'available', '-j'], { encoding: 'utf8' })).devices;
+    const all = Object.entries(list).sort((a, b) => (a[0] < b[0] ? 1 : -1)).flatMap(([, v]) => v);
+    const dev = all.find((x) => x.name === spec);
+    if (!dev) throw new Error('нет симулятора ' + spec);
+    for (const x of all) if (x.state === 'Booted' && x.udid !== dev.udid) { try { execFileSync('xcrun', ['simctl', 'shutdown', x.udid]); } catch {} }
+    try { execFileSync('xcrun', ['simctl', 'boot', dev.udid]); } catch {}
+    execFileSync('xcrun', ['simctl', 'bootstatus', dev.udid, '-b'], { timeout: 300000 });
+    for (const k of ['RemoteAutomationEnabled', 'WebDriverEnabled', 'WebKitRemoteAutomationEnabled', 'AllowRemoteAutomation']) {
+      try { execFileSync('xcrun', ['simctl', 'spawn', dev.udid, 'defaults', 'write', 'com.apple.mobilesafari', k, '-bool', 'YES']); } catch {}
+    }
+    caps = { browserName: 'safari', platformName: 'iOS', 'safari:useSimulator': true, 'safari:deviceUDID': dev.udid, 'safari:deviceType': kind === 'ipad' ? 'iPad' : 'iPhone' };
+  }
   console.log('сессия', target);
   // Первая сессия safaridriver на свежем раннере иногда падает «internal error» — повтор.
   let d;
@@ -27,7 +42,10 @@ async function open(target) {
 
 async function gateAndLogin(d) {
   await d.get(BASE + '/robots.txt');
-  await d.manage().addCookie({ name: 'devgate', value: GATE, path: '/', secure: true });
+  // Safari на macOS падает «internal error» на addCookie — тогда ставим куку из страницы
+  // (nginx нужна только сама кука, HttpOnly не обязателен).
+  try { await d.manage().addCookie({ name: 'devgate', value: GATE, path: '/', secure: true, domain: new URL(BASE).hostname }); }
+  catch { await d.executeScript('document.cookie = arguments[0]', 'devgate=' + GATE + '; path=/; secure; samesite=lax'); }
   await d.executeScript("try{localStorage.setItem('cookie_notice_seen','1')}catch(e){}");
   if (LOGIN !== 'true') return 'guest';
   return d.executeAsyncScript(function (done) {
