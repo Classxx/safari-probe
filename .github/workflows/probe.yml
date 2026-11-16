@@ -11,7 +11,7 @@ permissions: { contents: read }
 jobs:
   probe:
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +22,9 @@ jobs:
           TARGETS: ${{ inputs.targets }}
         run: |
           sudo safaridriver --enable
+          safaridriver --enable || true
+          # Safari открыть и закрыть один раз — иначе первая сессия WebDriver падает «internal error».
+          open -a Safari || true; sleep 8; pkill -x Safari || true
           defaults write com.apple.Safari AllowRemoteAutomation -bool true || true
           defaults write com.apple.Safari IncludeDevelopMenu -bool true || true
           sw_vers; /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" /Applications/Safari.app/Contents/Info.plist
@@ -31,11 +34,11 @@ jobs:
             echo "sim $NAME -> $UDID"
             [ -z "$UDID" ] && continue
             xcrun simctl boot "$UDID" || true
-            xcrun simctl bootstatus "$UDID" -b
+            perl -e 'alarm shift; exec @ARGV' 300 xcrun simctl bootstatus "$UDID" -b || echo "bootstatus timeout"
             for K in RemoteAutomationEnabled WebDriverEnabled WebKitRemoteAutomationEnabled AllowRemoteAutomation; do
               xcrun simctl spawn "$UDID" defaults write com.apple.mobilesafari $K -bool YES || true
             done
-            xcrun simctl launch "$UDID" com.apple.mobilesafari || true
+            perl -e 'alarm shift; exec @ARGV' 60 xcrun simctl launch "$UDID" com.apple.mobilesafari || true
             sleep 5
             xcrun simctl terminate "$UDID" com.apple.mobilesafari || true
           done

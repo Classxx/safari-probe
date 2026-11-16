@@ -8,15 +8,20 @@ fs.mkdirSync('out', { recursive: true });
 const results = [];
 const slug = (s) => s.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'home';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Логи публичного репозитория видны всем: адрес стенда и ключ из текста ошибок вычищаем
+// (GitHub маскирует секреты сам, это второй слой). Подробности — только в зашифрованном out/.
+const clean = (s) => { let x = String(s); for (const v of [GATE, BASE, BASE && new URL(BASE).host]) if (v) x = x.split(v).join('***'); return x; };
 
 async function open(target) {
   const [kind, spec] = [target.slice(0, target.indexOf(':')), target.slice(target.indexOf(':') + 1)];
   const caps = kind === 'mac' ? { browserName: 'safari' }
     : { browserName: 'safari', platformName: 'iOS', 'safari:useSimulator': true, 'safari:deviceName': spec, 'safari:deviceType': kind === 'ipad' ? 'iPad' : 'iPhone' };
   console.log('сессия', target);
-  const d = await new Builder().withCapabilities(caps).build();
+  // Первая сессия safaridriver на свежем раннере иногда падает «internal error» — повтор.
+  let d;
+  for (let t = 0; ; t++) { try { d = await new Builder().withCapabilities(caps).build(); break; } catch (e) { if (t >= 2) throw e; console.log('повтор сессии', target); await sleep(5000); } }
   console.log('сессия открыта', target);
-  if (kind === 'mac') { const [w, h] = spec.split('x').map(Number); try { await d.manage().window().setRect({ width: w, height: h + 80, x: 0, y: 0 }); } catch (e) { console.log('setRect:', String(e.message).split('\n')[0]); } }
+  if (kind === 'mac') { const [w, h] = spec.split('x').map(Number); try { await d.manage().window().setRect({ width: w, height: h + 80, x: 0, y: 0 }); } catch (e) { console.log('setRect:', clean(String(e.message).split('\n')[0])); } }
   return d;
 }
 
@@ -62,11 +67,11 @@ for (const target of TARGETS.split(',').map((s) => s.trim()).filter(Boolean)) {
           fs.writeFileSync('out/' + f, await d.takeScreenshot(), 'base64');
           r.shots.push(f);
         }
-      } catch (e) { r.error = String(e.message || e).split('\n')[0].slice(0, 300); }
+      } catch (e) { r.error = clean(String(e.message || e).split('\n')[0]).slice(0, 300); }
       results.push(r);
       console.log(target, p, r.error ? 'ОШИБКА' : 'ок', (r.issues || []).length);
     }
-  } catch (e) { results.push({ target, error: 'запуск: ' + String(e.message || e).split('\n')[0].slice(0, 300) }); console.log(target, 'не запустился:', String(e.stack || e).slice(0, 800)); }
+  } catch (e) { results.push({ target, error: 'запуск: ' + clean(String(e.message || e).split('\n')[0]).slice(0, 300) }); console.log(target, 'не запустился:', clean(String(e.message || e).split('\n')[0]).slice(0, 300)); fs.writeFileSync('out/error-' + slug(target) + '.txt', clean(String(e.stack || e))); }
   if (d) await d.quit().catch(() => {});
 }
 fs.writeFileSync('out/report.json', JSON.stringify(results, null, 1));
