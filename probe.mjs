@@ -13,8 +13,10 @@ async function open(target) {
   const [kind, spec] = [target.slice(0, target.indexOf(':')), target.slice(target.indexOf(':') + 1)];
   const caps = kind === 'mac' ? { browserName: 'safari' }
     : { browserName: 'safari', platformName: 'iOS', 'safari:useSimulator': true, 'safari:deviceName': spec, 'safari:deviceType': kind === 'ipad' ? 'iPad' : 'iPhone' };
+  console.log('сессия', target);
   const d = await new Builder().withCapabilities(caps).build();
-  if (kind === 'mac') { const [w, h] = spec.split('x').map(Number); await d.manage().window().setRect({ width: w, height: h + 80, x: 0, y: 0 }); }
+  console.log('сессия открыта', target);
+  if (kind === 'mac') { const [w, h] = spec.split('x').map(Number); try { await d.manage().window().setRect({ width: w, height: h + 80, x: 0, y: 0 }); } catch (e) { console.log('setRect:', String(e.message).split('\n')[0]); } }
   return d;
 }
 
@@ -64,7 +66,7 @@ for (const target of TARGETS.split(',').map((s) => s.trim()).filter(Boolean)) {
       results.push(r);
       console.log(target, p, r.error ? 'ОШИБКА' : 'ок', (r.issues || []).length);
     }
-  } catch (e) { results.push({ target, error: 'запуск: ' + String(e.message || e).split('\n')[0].slice(0, 300) }); console.log(target, 'не запустился'); }
+  } catch (e) { results.push({ target, error: 'запуск: ' + String(e.message || e).split('\n')[0].slice(0, 300) }); console.log(target, 'не запустился:', String(e.stack || e).slice(0, 800)); }
   if (d) await d.quit().catch(() => {});
 }
 fs.writeFileSync('out/report.json', JSON.stringify(results, null, 1));
